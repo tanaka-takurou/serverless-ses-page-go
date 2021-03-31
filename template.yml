@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless SES Page
+
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: 'ServerlessSESPage'
+  FrontPageApiStageName:
+    Type: String
+    Default: 'ProdStage'
+  ReceiptRuleSetName:
+    Type: String
+    Default: 'ServerlessSESReceiptRuleSet'
+  ReceiptRuleName1:
+    Type: String
+    Default: 'ServerlessSESReceiptRuleS3'
+  ReceiptRuleName2:
+    Type: String
+    Default: 'ServerlessSESReceiptRuleLambda'
+  TlsPolicy:
+    Type: String
+    Default: 'Require'
+  EmailInfoTableName:
+    Type: String
+    Default: 'email_info'
+    Description: (Required) The name of the new DynamoDB to store connection identifiers for each connected clients. Minimum 3 characters
+    MinLength: 3
+    MaxLength: 50
+    AllowedPattern: ^[A-Za-z_]+$
+    ConstraintDescription: 'Required. Can be characters and underscore only. No numbers or special characters allowed.'
+
+Resources:
+  EmailBucket:
+    Type: AWS::S3::Bucket
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EmailBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowSESPuts
+            Effect: Allow
+            Principal:
+              Service: 'ses.amazonaws.com'
+            Action: 's3:PutObject'
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref EmailBucket
+                - /*
+            Condition:
+                StringEquals:
+                    aws:Referer: !Ref 'AWS::AccountId'
+  FrontPageApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: ServerlessSESPageApi
+      EndpointConfiguration: REGIONAL
+      StageName: !Ref FrontPageApiStageName
+  FrontPageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessSESPageFrontFunction
+      CodeUri: bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'SES Front Function'
+      Environment:
+        Variables:
+          REGION: !Ref 'AWS::Region'
+          API_PATH: !Join [ '', [ '/', !Ref FrontPageApiStageName, '/api'] ]
+      Events:
+        FrontPageApi:
+          Type: Api
+          Properties:
+            Path: '/'
+            Method: get
+            RestApiId: !Ref FrontPageApi
+  MainFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessSESPageMainFunction
+      CodeUri: api/check/bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'SES API Function'
+      Policies:
+      - S3CrudPolicy:
+          BucketName: !Ref EmailBucket
+      - DynamoDBCrudPolicy:
+          TableName: !Ref EmailInfoTableName
+      Environment:
+        Variables:
+          REGION: !Ref 'AWS::Region'
+          BUCKET_NAME: !Ref EmailBucket
+          TABLE_NAME: !Ref EmailInfoTableName
+      Events:
+        FrontPageApi:
+          Type: Api
+          Properties:
+            Path: '/api'
+            Method: post
+            RestApiId: !Ref FrontPageApi
+  ReceiptFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ServerlessSESPageReceiptFunction
+      CodeUri: api/receipt/bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'SES Receipt Function'
+      Policies:
+      - S3CrudPolicy:
+          BucketName: !Ref EmailBucket
+      - DynamoDBCrudPolicy:
+          TableName: !Ref EmailInfoTableName
+      Environment:
+        Variables:
+          REGION: !Ref 'AWS::Region'
+          BUCKET_NAME: !Ref EmailBucket
+          TABLE_NAME: !Ref EmailInfoTableName
+  ReceiptFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ReceiptFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+  EmailInfoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: "file"
+        AttributeType: "S"
+      KeySchema:
+      - AttributeName: "file"
+        KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      SSESpecification:
+        SSEEnabled: False
+      TableName: !Ref EmailInfoTableName
+  ReceiptRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: !Ref ReceiptRuleSetName
+  ReceiptRule1:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      RuleSetName: !Ref ReceiptRuleSetName
+      Rule:
+        Name: !Ref ReceiptRuleName1
+        Enabled: true
+        ScanEnabled: true
+        TlsPolicy: !Ref TlsPolicy
+        Actions:
+          - S3Action:
+              BucketName: !Ref EmailBucket
+  ReceiptRule2:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      RuleSetName: !Ref ReceiptRuleSetName
+      After: !Ref ReceiptRule1
+      Rule:
+        Name: !Ref ReceiptRuleName2
+        Enabled: true
+        ScanEnabled: true
+        TlsPolicy: !Ref TlsPolicy
+        Actions:
+          - LambdaAction:
+              FunctionArn: !GetAtt ReceiptFunction.Arn
+
+Outputs:
+  APIURI:
+    Description: "URI"
+    Value: !Join [ '', [ 'https://', !Ref FrontPageApi, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/',!Ref FrontPageApiStageName,'/'] ]

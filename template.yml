@@ -62,11 +62,13 @@ Resources:
   FrontPageFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: ServerlessSESPageFrontFunction
       CodeUri: bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'SES Front Function'
       Environment:
         Variables:
@@ -82,11 +84,13 @@ Resources:
   MainFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: ServerlessSESPageMainFunction
       CodeUri: api/check/bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'SES API Function'
       Policies:
       - S3CrudPolicy:
@@ -108,11 +112,13 @@ Resources:
   ReceiptFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: ServerlessSESPageReceiptFunction
       CodeUri: api/receipt/bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'SES Receipt Function'
       Policies:
       - S3CrudPolicy:

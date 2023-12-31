@@ -16,10 +16,11 @@ import (
 
 type MailInfoData struct {
 	To      string `dynamodbav:"to"`
+	Key     string `dynamodbav:"key"`
 	Date    string `dynamodbav:"date"`
-	File    string `dynamodbav:"file"`
 	From    string `dynamodbav:"from"`
 	Subject string `dynamodbav:"subject"`
+	Checked bool   `dynamodbav:"checked"`
 }
 
 type APIResponse struct {
@@ -56,13 +57,14 @@ func put(ctx context.Context, tableName string, av map[string]dynamodbtypes.Attr
 	return err
 }
 
-func putMailInfo(ctx context.Context, to string, date string, file string, from string, subject string) error {
+func putMailInfo(ctx context.Context, to string, date string, key string, from string, subject string) error {
 	item := MailInfoData {
 		To: to,
 		Date: date,
-		File: file,
+		Key: key,
 		From: from,
 		Subject: subject,
+		Checked: false,
 	}
 	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
